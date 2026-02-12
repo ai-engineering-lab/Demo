@@ -1,61 +1,32 @@
+# Use Red Hat UBI 9 minimal (hardened base image)
+FROM registry.access.redhat.com/ubi9/ubi-minimal
 
-FROM ubuntu:latest
+# Install nginx
+RUN microdnf install -y nginx \
+    && microdnf clean all
 
-# Set environment variables to prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHON_VERSION=3.8 
+# Create non-root user
+RUN useradd -r -u 1001 -g root nginxuser
 
-# Update package lists and install necessary packages
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    gcc \
-    wget \
-    gnupg \
-    curl \
-    software-properties-common \
-    python${PYTHON_VERSION} \
-    python3-pip \
-    && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-    
-# Set the working directory
-WORKDIR /app
+# Create website content
+RUN echo "<!DOCTYPE html>" > /usr/share/nginx/html/index.html && \
+    echo "<html><head><title>Hello</title></head>" >> /usr/share/nginx/html/index.html && \
+    echo "<body><h1>Hello There!</h1></body></html>" >> /usr/share/nginx/html/index.html
 
-COPY . /app
+# Adjust permissions for non-root execution
+RUN chown -R 1001:0 /usr/share/nginx/html \
+    && chown -R 1001:0 /var/lib/nginx \
+    && chown -R 1001:0 /var/log/nginx \
+    && chmod -R g=u /usr/share/nginx/html /var/lib/nginx /var/log/nginx
 
-ARG DOWNLOAD_URL="https://ollama.com/install.sh"
+# Expose port 8080 (non-privileged port)
+EXPOSE 8080
 
-RUN wget $DOWNLOAD_URL -O install1.sh && \
-    chmod +x install1.sh && \
-    ./install1.sh
+# Modify nginx to listen on 8080 instead of 80
+RUN sed -i 's/listen       80;/listen       8080;/g' /etc/nginx/nginx.conf
 
-# Install dependencies
-#COPY requirements.txt .
-#RUN pip install -r requirements.txt
+# Switch to non-root user
+USER 1001
 
-# Command to run when the container starts
-CMD [ "echo", "Successfully installed!" ]
-
-######## STEPS ###############
-
-#(main)> pip install --upgrade pip
-
-#(main)> pip install -r requirements.txt
-
-#(main)> docker build -t drone_ai .
-#(main)> docker run -it -p 11434:11434 drone_ai /bin/bash
-
-#app> OLLAMA_HOST=0.0.0.0 ollama serve &
-### WAIT for about 10 seconds before <press enter>
-
-#app> ollama list
-## should be empty
-
-#app> ollama run deepseek-r1 --verbose
-
-## CREATE A NEW BASH
-## curl commands for testing. 
-#> curl -X POST http://localhost:11434/api/generate -d '{  "model": "deepseek-r1",  "prompt":"What is water?"}'
-
-## Use Sky-T1-32B to verify: http://164.152.23.196:3000/
+# Start nginx in foreground
+CMD ["nginx", "-g", "daemon off;"]
